@@ -67,7 +67,7 @@ def resolve_target(target: str):
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Обработчик команды /start"""
     user = update.effective_user
-    get_user(user.id)
+    get_user(user.id, user.username)  # обновляем/сохраняем username
 
     welcome_text = (
         f"👋 Привет, {user.first_name}!\n\n"
@@ -91,10 +91,9 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 async def cards(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Обработчик команды /cards"""
-    user_id = update.effective_user.id
-    user_data = get_user(user_id)
+    user = update.effective_user
+    user_data = get_user(user.id, user.username)
 
-    # Проверка кулдауна
     can, remaining = check_cooldown(user_data.get("last_card", 0))
     if not can:
         hours = remaining // 3600
@@ -106,32 +105,29 @@ async def cards(update: Update, context: ContextTypes.DEFAULT_TYPE):
         )
         return
 
-    # Получаем карту с учетом шансов
     card = get_random_card()
     if not card:
         await update.message.reply_text("❌ В колоде пока нет карт!")
         return
 
-    # Проверка на повтор
     is_repeated = card['id'] in user_data.get("cards", [])
     base_points = RARITY_POINTS[card['rarity']]
     points_earned = base_points // 2 if is_repeated else base_points
 
-    # Обновляем данные пользователя
     if not is_repeated:
         user_data.setdefault("cards", []).append(card['id'])
 
     user_data["balance"] = user_data.get("balance", 0) + points_earned
     user_data["last_card"] = time.time()
-    update_user(user_id, user_data)
+    update_user(user.id, user_data)
 
-    # Отправляем карту
     await send_card_message(update.message, card, is_repeated, points_earned, user_data["balance"])
 
 
 async def balance(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Обработчик команды /balance"""
-    user_data = get_user(update.effective_user.id)
+    user = update.effective_user
+    user_data = get_user(user.id, user.username)
     cards_count = len(user_data.get("cards", []))
 
     text = (
@@ -143,11 +139,9 @@ async def balance(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 
 async def collection(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """
-    Показывает коллекцию с группировкой по авторам.
-    Для каждой карты выводится ID в теге <code> для удобного копирования.
-    """
-    user_data = get_user(update.effective_user.id)
+    """Показывает коллекцию с группировкой по авторам и ID для передачи"""
+    user = update.effective_user
+    user_data = get_user(user.id, user.username)
     card_ids = user_data.get("cards", [])
 
     if not card_ids:
@@ -155,8 +149,6 @@ async def collection(update: Update, context: ContextTypes.DEFAULT_TYPE):
         return
 
     all_cards = load_cards()
-
-    # Группируем по редкости -> по автору
     rarity_author_cards = {rarity: {} for rarity in RARITY_POINTS.keys()}
 
     for card_id in card_ids:
@@ -181,10 +173,9 @@ async def collection(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 count = len(cards)
                 text += f"  • @{author} ({count} шт.):\n"
                 for card in cards:
-                    text += f"      <code>{card['id']}</code> (ID)\n"
+                    text += f"      <code>{card['id']}</code>\n"
             text += "\n"
 
-    # Ограничение длины сообщения
     if len(text) > 4000:
         text = text[:4000] + "...\n(слишком много карт, показаны не все)"
 
@@ -192,7 +183,7 @@ async def collection(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 
 async def cases(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Обработчик команды /cases – меню кейсов"""
+    """Меню кейсов"""
     keyboard = [
         [InlineKeyboardButton("📦 МИНИ-КЕЙС (2000🌟)", callback_data="case_mini")],
         [InlineKeyboardButton("📦 ТАЙНО-КЕЙС (5000🌟)", callback_data="case_secret")],
@@ -234,57 +225,46 @@ async def case_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await query.edit_message_text("❌ Покупка отменена")
         return
 
-    user_id = query.from_user.id
-    user_data = get_user(user_id)
+    user = query.from_user
+    user_data = get_user(user.id, user.username)
 
-    # Цены кейсов
     case_prices = {
         "case_mini": 2000,
         "case_secret": 5000,
         "case_mega": 10000
     }
-
     price = case_prices.get(query.data, 0)
     if user_data.get("balance", 0) < price:
         await query.edit_message_text("❌ Недостаточно очков!")
         return
 
-    # Получаем карту из кейса
     if query.data == "case_mini":
         card = get_mini_case_card()
-        case_name = "Мини-кейс"
     elif query.data == "case_secret":
         card = get_secret_case_card()
-        case_name = "Тайно-кейс"
     else:
         card = get_mega_case_card()
-        case_name = "Мега-кейс"
 
     if not card:
         await query.edit_message_text("❌ В кейсе пока нет карт!")
         return
 
-    # Проверка на повтор
     is_repeated = card['id'] in user_data.get("cards", [])
     base_points = RARITY_POINTS[card['rarity']]
     points_earned = base_points // 2 if is_repeated else base_points
 
-    # Обновляем данные
     if not is_repeated:
         user_data.setdefault("cards", []).append(card['id'])
 
     user_data["balance"] = user_data["balance"] - price + points_earned
-    update_user(user_id, user_data)
+    update_user(user.id, user_data)
 
-    # Удаляем сообщение с кнопками
     await query.message.delete()
-
-    # Отправляем карту
     await send_card_message(query.message, card, is_repeated, points_earned, user_data["balance"])
 
 
 async def transfer(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Обработчик команды /transfer (поддерживает @username)"""
+    """Передача карты по @username"""
     args = context.args
     if len(args) != 2:
         await update.message.reply_text(
@@ -295,15 +275,13 @@ async def transfer(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     target_username = args[0].lstrip('@')
     card_id = args[1]
-    from_id = update.effective_user.id
-    from_data = get_user(from_id)
+    from_user = update.effective_user
+    from_data = get_user(from_user.id, from_user.username)
 
-    # Проверяем наличие карты
     if card_id not in from_data.get("cards", []):
         await update.message.reply_text("❌ У вас нет такой карты!")
         return
 
-    # Ищем получателя по username
     users = load_users()
     to_id = None
     for uid, data in users.items():
@@ -315,30 +293,29 @@ async def transfer(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await update.message.reply_text(f"❌ Пользователь @{target_username} не найден в базе!")
         return
 
-    if to_id == from_id:
+    if to_id == from_user.id:
         await update.message.reply_text("❌ Нельзя передать карту самому себе!")
         return
 
-    # Передаем карту
     from_data["cards"].remove(card_id)
-    update_user(from_id, from_data)
+    update_user(from_user.id, from_data)
 
-    to_data = get_user(to_id)
+    to_data = get_user(to_id)  # username получателя обновится, когда он сам напишет боту
     to_data.setdefault("cards", []).append(card_id)
     update_user(to_id, to_data)
 
     await update.message.reply_text(f"✅ Карта передана пользователю @{target_username}!")
 
-
 # =============================================================================
-# АДМИН-ПАНЕЛЬ (поддержка @username и ID)
+# АДМИН-ПАНЕЛЬ
 # =============================================================================
 
 async def admin(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Админ-панель"""
     if update.effective_user.id not in config.ADMIN_IDS:
         await update.message.reply_text("❌ У вас нет прав администратора!")
         return
+    # обновляем username админа
+    get_user(update.effective_user.id, update.effective_user.username)
 
     text = (
         "👑 <b>АДМИН-ПАНЕЛЬ</b>\n\n"
@@ -354,9 +331,9 @@ async def admin(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 
 async def add_points(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Начислить очки (поддерживает @username и ID)"""
     if update.effective_user.id not in config.ADMIN_IDS:
         return
+    get_user(update.effective_user.id, update.effective_user.username)
 
     args = context.args
     if len(args) != 2:
@@ -383,9 +360,9 @@ async def add_points(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 
 async def remove_points(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Снять очки (поддерживает @username и ID)"""
     if update.effective_user.id not in config.ADMIN_IDS:
         return
+    get_user(update.effective_user.id, update.effective_user.username)
 
     args = context.args
     if len(args) != 2:
@@ -413,9 +390,9 @@ async def remove_points(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 
 async def give_card(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Выдать карту (поддерживает @username и ID)"""
     if update.effective_user.id not in config.ADMIN_IDS:
         return
+    get_user(update.effective_user.id, update.effective_user.username)
 
     args = context.args
     if len(args) != 2:
@@ -447,9 +424,9 @@ async def give_card(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 
 async def reset_cooldown(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Сбросить кулдаун (поддерживает @username и ID)"""
     if update.effective_user.id not in config.ADMIN_IDS:
         return
+    get_user(update.effective_user.id, update.effective_user.username)
 
     args = context.args
     if len(args) != 1:
@@ -471,9 +448,9 @@ async def reset_cooldown(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 
 async def stats(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Статистика бота"""
     if update.effective_user.id not in config.ADMIN_IDS:
         return
+    get_user(update.effective_user.id, update.effective_user.username)
 
     users = load_users()
     all_cards = load_cards()
@@ -483,7 +460,6 @@ async def stats(update: Update, context: ContextTypes.DEFAULT_TYPE):
     total_cards = sum(len(u.get("cards", [])) for u in users.values())
     cards_in_game = len(all_cards)
 
-    # Статистика по редкостям
     rarity_stats = {rarity: 0 for rarity in RARITY_POINTS.keys()}
     for card in all_cards:
         rarity_stats[card['rarity']] += 1
@@ -506,9 +482,9 @@ async def stats(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 
 async def reload_cards(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Перезагрузить карты из папки"""
     if update.effective_user.id not in config.ADMIN_IDS:
         return
+    get_user(update.effective_user.id, update.effective_user.username)
 
     from cards import _cards_cache
     _cards_cache = None
