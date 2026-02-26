@@ -123,7 +123,7 @@ async def collection(update: Update, context: ContextTypes.DEFAULT_TYPE):
             text += f"{emoji} <b>{rarity.upper()}</b> ({len(cards)} шт.)\n"
             for card in cards:
                 # Каждая карта: автор и ID в теге code для копирования
-                text += f"  • @{card['author']} – <code>{card['id']}</code>\n"
+                text += f"  • Работа от @{card['author']} – <code>{card['id']}</code> (ID для передачи)\n"
             text += "\n"
     
     # Ограничение длины сообщения
