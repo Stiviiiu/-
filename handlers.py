@@ -98,7 +98,7 @@ async def balance(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text(text, parse_mode='HTML')
 
 async def collection(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Обработчик команды /collection – показывает коллекцию с ID карт"""
+    """Показывает коллекцию с группировкой по авторам и ID карт для передачи"""
     user_data = get_user(update.effective_user.id)
     card_ids = user_data.get("cards", [])
     
@@ -106,27 +106,40 @@ async def collection(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await update.message.reply_text("📭 У вас пока нет карт в коллекции!")
         return
     
-    # Загружаем все карты для получения информации
     from cards import load_cards
     all_cards = load_cards()
-    cards_by_rarity = {rarity: [] for rarity in RARITY_POINTS.keys()}
+    
+    # Группируем карты по редкости, затем по автору
+    rarity_author_cards = {rarity: {} for rarity in RARITY_POINTS.keys()}
     
     for card_id in card_ids:
         card = next((c for c in all_cards if c['id'] == card_id), None)
         if card:
-            cards_by_rarity[card['rarity']].append(card)
+            rarity = card['rarity']
+            author = card['author']
+            if author not in rarity_author_cards[rarity]:
+                rarity_author_cards[rarity][author] = []
+            rarity_author_cards[rarity][author].append(card)
     
-    text = "📚 <b>Ваша коллекция (ID для передачи):</b>\n\n"
-    for rarity, cards in cards_by_rarity.items():
-        if cards:
+    total_cards = len(card_ids)
+    text = f"📚 <b>Ваша коллекция (ID для передачи):</b> всего карт: {total_cards}\n\n"
+    
+    for rarity, authors in rarity_author_cards.items():
+        if authors:
             emoji = RARITY_EMOJI[rarity]
-            text += f"{emoji} <b>{rarity.upper()}</b> ({len(cards)} шт.)\n"
-            for card in cards:
-                # Каждая карта: автор и ID в теге code для копирования
-                text += f"  • Работа от @{card['author']} – <code>{card['id']}</code> (ID для передачи)\n"
+            # Считаем общее количество карт этой редкости
+            rarity_total = sum(len(cards) for cards in authors.values())
+            text += f"{emoji} <b>{rarity.upper()}</b> ({rarity_total} шт.)\n"
+            
+            for author, cards in authors.items():
+                count = len(cards)
+                # Склонение слова "карт" (можно упростить до "шт.")
+                text += f"  • @{author} ({count} шт.):\n"
+                for card in cards:
+                    text += f"      <code>{card['id']}</code>\n"
             text += "\n"
     
-    # Ограничение длины сообщения
+    # Ограничение длины сообщения Telegram (4096 символов)
     if len(text) > 4000:
         text = text[:4000] + "...\n(слишком много карт, показаны не все)"
     
