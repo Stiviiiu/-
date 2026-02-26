@@ -98,7 +98,7 @@ async def balance(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text(text, parse_mode='HTML')
 
 async def collection(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Обработчик команды /collection"""
+    """Обработчик команды /collection – показывает коллекцию с ID карт"""
     user_data = get_user(update.effective_user.id)
     card_ids = user_data.get("cards", [])
     
@@ -106,7 +106,8 @@ async def collection(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await update.message.reply_text("📭 У вас пока нет карт в коллекции!")
         return
     
-    # Группируем карты по редкости
+    # Загружаем все карты для получения информации
+    from cards import load_cards
     all_cards = load_cards()
     cards_by_rarity = {rarity: [] for rarity in RARITY_POINTS.keys()}
     
@@ -115,17 +116,19 @@ async def collection(update: Update, context: ContextTypes.DEFAULT_TYPE):
         if card:
             cards_by_rarity[card['rarity']].append(card)
     
-    # Формируем сообщение
-    text = "📚 <b>Ваша коллекция:</b>\n\n"
+    text = "📚 <b>Ваша коллекция (ID для передачи):</b>\n\n"
     for rarity, cards in cards_by_rarity.items():
         if cards:
             emoji = RARITY_EMOJI[rarity]
-            text += f"{emoji} <b>{rarity.upper()}</b>: {len(cards)} карт\n"
-            for card in cards[:5]:  # Показываем первые 5
-                text += f"  • @{card['author']}\n"
-            if len(cards) > 5:
-                text += f"  ...и ещё {len(cards)-5}\n"
+            text += f"{emoji} <b>{rarity.upper()}</b> ({len(cards)} шт.)\n"
+            for card in cards:
+                # Каждая карта: автор и ID в теге code для копирования
+                text += f"  • @{card['author']} – <code>{card['id']}</code>\n"
             text += "\n"
+    
+    # Ограничение длины сообщения
+    if len(text) > 4000:
+        text = text[:4000] + "...\n(слишком много карт, показаны не все)"
     
     await update.message.reply_text(text, parse_mode='HTML')
 
