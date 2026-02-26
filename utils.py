@@ -15,17 +15,27 @@ def save_users(users):
     with open(DATA_FILE, "w", encoding="utf-8") as f:
         json.dump(users, f, ensure_ascii=False, indent=4)
 
-def get_user(user_id):
+def get_user(user_id, username=None):
+    """
+    Получить данные пользователя по user_id.
+    Если передан username, обновляет его в базе (при изменении).
+    """
     users = load_users()
     uid = str(user_id)
     if uid not in users:
+        # Новый пользователь
         users[uid] = {
-            "username": "",
+            "username": username or "",
             "balance": 0,
             "last_card": 0,
             "cards": []
         }
         save_users(users)
+    else:
+        # Обновляем username, если он изменился
+        if username is not None and users[uid].get("username") != username:
+            users[uid]["username"] = username
+            save_users(users)
     return users[uid]
 
 def update_user(user_id, data):
