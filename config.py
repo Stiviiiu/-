@@ -1,2 +1,2 @@
-TOKEN = "ВАШ_ТОКЕН_БОТА"
-ADMIN_IDS = [123456789]  # замените на свои ID
+TOKEN = "8608911191:AAEhroEAOD47tyKko-r-nksdjC3ybpGpeFE"
+ADMIN_IDS = [6458164021]
