@@ -222,16 +222,24 @@ async def transfer(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text(f"✅ Карта передана пользователю @{target_username}!")
 
 async def top(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    async with db_pool.acquire() as conn:
-        rows = await conn.fetch("SELECT username, balance FROM users ORDER BY balance DESC LIMIT 10")
+    try:
+        async with db_pool.acquire() as conn:
+            rows = await conn.fetch("SELECT username, balance FROM users ORDER BY balance DESC LIMIT 10")
+    except Exception as e:
+        await update.message.reply_text(f"❌ Ошибка базы данных: {e}")
+        return
+
     if not rows:
         await update.message.reply_text("📊 Пока нет данных для топа.")
         return
+
     text = "🏆 <b>Топ игроков по очкам:</b>\n\n"
     for i, row in enumerate(rows, 1):
-        username = row['username'] or "Без username"
+        username = row.get('username')
+        display_name = f"@{username}" if username else "Аноним"
         balance = row['balance']
-        text += f"{i}. @{username} — {balance}🌟\n"
+        text += f"{i}. {display_name} — {balance}🌟\n"
+
     await update.message.reply_text(text, parse_mode='HTML')
 
 async def bonus(update: Update, context: ContextTypes.DEFAULT_TYPE):
