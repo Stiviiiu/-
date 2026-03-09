@@ -6,6 +6,10 @@ db_pool: Optional[asyncpg.Pool] = None
 
 async def init_db_pool(dsn: str):
     global db_pool
+    # Если пул уже существует, просто выходим
+    if db_pool is not None:
+        print("⚠️ Database pool already exists, skipping initialization.")
+        return
     try:
         db_pool = await asyncpg.create_pool(dsn)
         print(f"✅ Database pool created successfully")
@@ -18,6 +22,7 @@ async def close_db_pool():
     if db_pool:
         await db_pool.close()
         print("✅ Database pool closed")
+        db_pool = None
 
 async def get_user(user_id: int, username: str = None) -> Dict[str, Any]:
     async with db_pool.acquire() as conn:
