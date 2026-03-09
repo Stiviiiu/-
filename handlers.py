@@ -30,6 +30,8 @@ async def send_card_message(message, card, is_repeated, points_earned, new_balan
         await message.reply_photo(photo=photo, caption=caption, parse_mode='HTML')
 
 async def resolve_target(target: str):
+    if db_pool is None:
+        return None, "❌ База данных не подключена."
     async with db_pool.acquire() as conn:
         if target.startswith('@'):
             username = target[1:].lower()
@@ -51,6 +53,9 @@ async def resolve_target(target: str):
 # ---------- Команды игроков ----------
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user = update.effective_user
+    if db_pool is None:
+        await update.message.reply_text("❌ База данных не подключена. Попробуйте позже.")
+        return
     await get_user(user.id, user.username)
     text = (
         f"👋 Привет, {user.first_name}!\n\n"
@@ -72,6 +77,9 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 async def cards(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user = update.effective_user
+    if db_pool is None:
+        await update.message.reply_text("❌ База данных не подключена.")
+        return
     user_data = await get_user(user.id, user.username)
     can, remaining = await check_cooldown(user_data.get("last_card", 0), 1)
     if not can:
@@ -98,6 +106,9 @@ async def cards(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 async def balance(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user = update.effective_user
+    if db_pool is None:
+        await update.message.reply_text("❌ База данных не подключена.")
+        return
     user_data = await get_user(user.id, user.username)
     cards_count = len(user_data.get("cards", []))
     text = f"💰 <b>Ваш баланс</b>\n\nОчки: <b>{user_data.get('balance', 0)}</b>\nКарт в коллекции: <b>{cards_count}</b>"
@@ -105,6 +116,9 @@ async def balance(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 async def collection(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user = update.effective_user
+    if db_pool is None:
+        await update.message.reply_text("❌ База данных не подключена.")
+        return
     user_data = await get_user(user.id, user.username)
     card_ids = user_data.get("cards", [])
     if not card_ids:
@@ -139,14 +153,15 @@ async def cases(update: Update, context: ContextTypes.DEFAULT_TYPE):
         [InlineKeyboardButton("📦 Легендарный кейс (5000🌟)", callback_data="case_legendary")],
         [InlineKeyboardButton("❌ ОТМЕНА", callback_data="case_cancel")]
     ]
-    epic_text = "\n".join([f"  {item.get('rarity', str(item.get('amount'))+'🌟')}: {item['weight']}%" for item in EPIC_CASE["items"]])
-    mythic_text = "\n".join([f"  {item.get('rarity', str(item.get('amount'))+'🌟')}: {item['weight']}%" for item in MYTHIC_CASE["items"]])
-    legend_text = "\n".join([f"  {item.get('rarity', str(item.get('amount'))+'🌟')}: {item['weight']}%" for item in LEGENDARY_CASE["items"]])
+    # Формируем описание кейсов (можно вынести, но для краткости оставим так)
+    epic_items = "\n".join([f"  {item.get('rarity', str(item.get('amount'))+'🌟')}: {item['weight']}%" for item in EPIC_CASE["items"]])
+    mythic_items = "\n".join([f"  {item.get('rarity', str(item.get('amount'))+'🌟')}: {item['weight']}%" for item in MYTHIC_CASE["items"]])
+    legend_items = "\n".join([f"  {item.get('rarity', str(item.get('amount'))+'🌟')}: {item['weight']}%" for item in LEGENDARY_CASE["items"]])
     text = (
         "🎁 <b>МАГАЗИН КЕЙСОВ</b>\n\n"
-        f"📦 <b>Эпический кейс (1000🌟)</b>\n{epic_text}\n\n"
-        f"📦 <b>Мифический кейс (2000🌟)</b>\n{mythic_text}\n\n"
-        f"📦 <b>Легендарный кейс (5000🌟)</b>\n{legend_text}"
+        f"📦 <b>Эпический кейс (1000🌟)</b>\n{epic_items}\n\n"
+        f"📦 <b>Мифический кейс (2000🌟)</b>\n{mythic_items}\n\n"
+        f"📦 <b>Легендарный кейс (5000🌟)</b>\n{legend_items}"
     )
     await update.message.reply_text(text, reply_markup=InlineKeyboardMarkup(keyboard), parse_mode='HTML')
 
@@ -157,6 +172,9 @@ async def case_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await query.edit_message_text("❌ Покупка отменена")
         return
     user = query.from_user
+    if db_pool is None:
+        await query.edit_message_text("❌ База данных не подключена.")
+        return
     user_data = await get_user(user.id, user.username)
     if query.data == "case_epic":
         case = EPIC_CASE
@@ -201,6 +219,9 @@ async def transfer(update: Update, context: ContextTypes.DEFAULT_TYPE):
     target_username = args[0].lstrip('@')
     card_id = args[1]
     from_user = update.effective_user
+    if db_pool is None:
+        await update.message.reply_text("❌ База данных не подключена.")
+        return
     from_data = await get_user(from_user.id, from_user.username)
     if card_id not in from_data.get("cards", []):
         await update.message.reply_text("❌ У вас нет такой карты!")
@@ -222,28 +243,31 @@ async def transfer(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text(f"✅ Карта передана пользователю @{target_username}!")
 
 async def top(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    if db_pool is None:
+        await update.message.reply_text("❌ База данных не подключена. Сообщите администратору.")
+        return
     try:
         async with db_pool.acquire() as conn:
             rows = await conn.fetch("SELECT username, balance FROM users ORDER BY balance DESC LIMIT 10")
     except Exception as e:
         await update.message.reply_text(f"❌ Ошибка базы данных: {e}")
         return
-
     if not rows:
         await update.message.reply_text("📊 Пока нет данных для топа.")
         return
-
     text = "🏆 <b>Топ игроков по очкам:</b>\n\n"
     for i, row in enumerate(rows, 1):
         username = row.get('username')
         display_name = f"@{username}" if username else "Аноним"
         balance = row['balance']
         text += f"{i}. {display_name} — {balance}🌟\n"
-
     await update.message.reply_text(text, parse_mode='HTML')
 
 async def bonus(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user = update.effective_user
+    if db_pool is None:
+        await update.message.reply_text("❌ База данных не подключена.")
+        return
     user_data = await get_user(user.id, user.username)
     can, remaining = await check_cooldown(user_data.get("last_bonus", 0), 24)
     if not can:
@@ -279,6 +303,9 @@ async def roulette(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await update.message.reply_text("❌ Ставка должна быть положительной!")
         return
     user = update.effective_user
+    if db_pool is None:
+        await update.message.reply_text("❌ База данных не подключена.")
+        return
     user_data = await get_user(user.id, user.username)
     if user_data.get("balance", 0) < bet:
         await update.message.reply_text("❌ У вас недостаточно очков!")
@@ -298,6 +325,9 @@ async def admin(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if update.effective_user.id not in config.ADMIN_IDS:
         await update.message.reply_text("❌ У вас нет прав администратора!")
         return
+    if db_pool is None:
+        await update.message.reply_text("❌ База данных не подключена.")
+        return
     await get_user(update.effective_user.id, update.effective_user.username)
     text = (
         "👑 <b>АДМИН-ПАНЕЛЬ</b>\n\n"
@@ -314,6 +344,9 @@ async def admin(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 async def add_points(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if update.effective_user.id not in config.ADMIN_IDS:
+        return
+    if db_pool is None:
+        await update.message.reply_text("❌ База данных не подключена.")
         return
     await get_user(update.effective_user.id, update.effective_user.username)
     args = context.args
@@ -338,6 +371,9 @@ async def add_points(update: Update, context: ContextTypes.DEFAULT_TYPE):
 async def remove_points(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if update.effective_user.id not in config.ADMIN_IDS:
         return
+    if db_pool is None:
+        await update.message.reply_text("❌ База данных не подключена.")
+        return
     await get_user(update.effective_user.id, update.effective_user.username)
     args = context.args
     if len(args) != 2:
@@ -361,6 +397,9 @@ async def remove_points(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 async def give_card(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if update.effective_user.id not in config.ADMIN_IDS:
+        return
+    if db_pool is None:
+        await update.message.reply_text("❌ База данных не подключена.")
         return
     await get_user(update.effective_user.id, update.effective_user.username)
     args = context.args
@@ -388,6 +427,9 @@ async def give_card(update: Update, context: ContextTypes.DEFAULT_TYPE):
 async def reset_cooldown(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if update.effective_user.id not in config.ADMIN_IDS:
         return
+    if db_pool is None:
+        await update.message.reply_text("❌ База данных не подключена.")
+        return
     await get_user(update.effective_user.id, update.effective_user.username)
     args = context.args
     if len(args) != 1:
@@ -406,6 +448,9 @@ async def reset_cooldown(update: Update, context: ContextTypes.DEFAULT_TYPE):
 async def reset_bonus(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if update.effective_user.id not in config.ADMIN_IDS:
         return
+    if db_pool is None:
+        await update.message.reply_text("❌ База данных не подключена.")
+        return
     await get_user(update.effective_user.id, update.effective_user.username)
     args = context.args
     if len(args) != 1:
@@ -423,6 +468,9 @@ async def reset_bonus(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 async def stats(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if update.effective_user.id not in config.ADMIN_IDS:
+        return
+    if db_pool is None:
+        await update.message.reply_text("❌ База данных не подключена.")
         return
     await get_user(update.effective_user.id, update.effective_user.username)
     async with db_pool.acquire() as conn:
