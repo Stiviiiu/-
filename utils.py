@@ -6,12 +6,18 @@ db_pool: Optional[asyncpg.Pool] = None
 
 async def init_db_pool(dsn: str):
     global db_pool
-    db_pool = await asyncpg.create_pool(dsn)
+    try:
+        db_pool = await asyncpg.create_pool(dsn)
+        print(f"✅ Database pool created successfully")
+    except Exception as e:
+        print(f"❌ Failed to create database pool: {e}")
+        db_pool = None
 
 async def close_db_pool():
     global db_pool
     if db_pool:
         await db_pool.close()
+        print("✅ Database pool closed")
 
 async def get_user(user_id: int, username: str = None) -> Dict[str, Any]:
     async with db_pool.acquire() as conn:
