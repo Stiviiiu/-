@@ -10,7 +10,7 @@ from handlers import (
     admin, add_points, remove_points, give_card, reset_cooldown, reset_bonus,
     stats, reload_cards, top, bonus, roulette
 )
-from utils import init_db_pool, close_db_pool, db_pool
+import utils  # импортируем модуль целиком
 
 logging.basicConfig(
     format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
@@ -32,21 +32,23 @@ def run_health_server():
     server.serve_forever()
 
 async def init_db():
-    """Инициализация пула соединений с БД"""
+    """Инициализация пула соединений с БД (один раз)"""
     try:
-        await init_db_pool(config.DATABASE_URL)
-        print("✅ Database pool created successfully")
+        await utils.init_db_pool(config.DATABASE_URL)
+        if utils.db_pool is None:
+            print("❌ Database pool is None after init. Exiting.")
+            # Здесь можно решить, завершать приложение или нет
+            # Если база критична – завершаем
+            raise Exception("Database pool initialization failed")
     except Exception as e:
-        print(f"❌ Failed to create database pool: {e}")
-        # Можно завершить приложение, если база критична
-        # exit(1)
+        print(f"❌ Unhandled exception during DB init: {e}")
+        raise  # Пробрасываем исключение, чтобы прервать запуск
 
 async def shutdown_db():
-    await close_db_pool()
+    await utils.close_db_pool()
     print("✅ Database pool closed")
 
 def main():
-    # Запускаем health-сервер
     health_thread = threading.Thread(target=run_health_server, daemon=True)
     health_thread.start()
     print("🤖 Бот запускается...")
@@ -56,11 +58,11 @@ def main():
     asyncio.set_event_loop(loop)
     try:
         loop.run_until_complete(init_db())
-        if db_pool is None:
-            print("❌ Database pool is None after init. Exiting.")
-            return
+        # Если дошли сюда, значит пул успешно создан
+        print("✅ Database pool is ready")
     except Exception as e:
-        print(f"❌ Unhandled exception during DB init: {e}")
+        print(f"❌ Fatal error during DB init: {e}")
+        # Завершаем приложение, так как без базы бот не работает
         return
 
     app = Application.builder().token(config.TOKEN).build()
@@ -93,7 +95,6 @@ def main():
     try:
         app.run_polling()
     finally:
-        # Закрываем пул при завершении
         loop.run_until_complete(shutdown_db())
         loop.close()
 
