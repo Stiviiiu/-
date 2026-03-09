@@ -1,44 +1,58 @@
 import os
 import re
 import random
-from utils import RARITY_POINTS
+from typing import List, Dict, Optional
 
 CARDS_FOLDER = "cards"
 _cards_cache = None
 
-# ========== НАСТРОЙКА ШАНСОВ ==========
-FREE_CARD_CHANCES = {
-    "необычная": 0.40,
-    "редкая": 0.30,
-    "эпическая": 0.15,
-    "мифическая": 0.10,
-    "ультра": 0.05
+# Веса для бесплатной карты
+FREE_CARD_WEIGHTS = {
+    "необычная": 50,
+    "редкая": 40,
+    "эпическая": 25,
+    "мифическая": 16,
+    "ультра": 6
 }
 
-MINI_CASE_CHANCES = {
-    "необычная": 0.60,
-    "редкая": 0.25,
-    "эпическая": 0.10,
-    "мифическая": 0.04,
-    "ультра": 0.01
+# Кейсы
+EPIC_CASE = {
+    "name": "Эпический кейс",
+    "price": 1000,
+    "items": [
+        {"type": "card", "rarity": "необычная", "weight": 50},
+        {"type": "card", "rarity": "редкая", "weight": 40},
+        {"type": "card", "rarity": "эпическая", "weight": 25},
+        {"type": "card", "rarity": "мифическая", "weight": 18},
+        {"type": "card", "rarity": "ультра", "weight": 5},
+        {"type": "points", "amount": 1000, "weight": 15},
+        {"type": "points", "amount": 7000, "weight": 10},
+        {"type": "points", "amount": 15000, "weight": 3},
+    ]
 }
 
-SECRET_CASE_CHANCES = {
-    "необычная": 0.45,
-    "редкая": 0.30,
-    "эпическая": 0.15,
-    "мифическая": 0.07,
-    "ультра": 0.03
+MYTHIC_CASE = {
+    "name": "Мифический кейс",
+    "price": 2000,
+    "items": [
+        {"type": "card", "rarity": "эпическая", "weight": 30},
+        {"type": "card", "rarity": "мифическая", "weight": 20},
+        {"type": "card", "rarity": "ультра", "weight": 7},
+        {"type": "points", "amount": 3000, "weight": 15},
+    ]
 }
 
-MEGA_CASE_CHANCES = {
-    "необычная": 0.30,
-    "редкая": 0.30,
-    "эпическая": 0.25,
-    "мифическая": 0.10,
-    "ультра": 0.05
+LEGENDARY_CASE = {
+    "name": "Легендарный кейс",
+    "price": 5000,
+    "items": [
+        {"type": "card", "rarity": "мифическая", "weight": 30},
+        {"type": "card", "rarity": "ультра", "weight": 9},
+        {"type": "points", "amount": 25000, "weight": 2},
+        {"type": "points", "amount": 5000, "weight": 10},
+        {"type": "points", "amount": 1000, "weight": 25},
+    ]
 }
-# =======================================
 
 def load_cards():
     global _cards_cache
@@ -54,20 +68,12 @@ def load_cards():
         filepath = os.path.join(CARDS_FOLDER, filename)
         if not os.path.isfile(filepath):
             continue
-
-        # Поддержка ников с подчёркиваниями (например @on_dsgn)
         match = re.match(r"Работа_от_@(.+)_(необычная|редкая|эпическая|мифическая|ультра)\..+", filename)
         if not match:
             print(f"⚠️ Пропущен файл (неправильное имя): {filename}")
             continue
-
         author = match.group(1)
         rarity = match.group(2).lower()
-
-        if rarity not in RARITY_POINTS:
-            print(f"⚠️ Пропущен файл (неизвестная редкость '{rarity}'): {filename}")
-            continue
-
         cards.append({
             "id": filename,
             "author": author,
@@ -75,7 +81,6 @@ def load_cards():
             "file_path": filepath
         })
         print(f"✅ Загружена карта: {author} - {rarity}")
-
     _cards_cache = cards
     print(f"📊 Всего загружено карт: {len(cards)}")
     return cards
@@ -84,64 +89,47 @@ def get_random_card():
     cards = load_cards()
     if not cards:
         return None
-
     cards_by_rarity = {}
     for card in cards:
-        rarity = card["rarity"]
-        if rarity not in cards_by_rarity:
-            cards_by_rarity[rarity] = []
-        cards_by_rarity[rarity].append(card)
+        cards_by_rarity.setdefault(card["rarity"], []).append(card)
 
-    available_rarities = []
+    available = []
     weights = []
-    for rarity, chance in FREE_CARD_CHANCES.items():
+    for rarity, w in FREE_CARD_WEIGHTS.items():
         if rarity in cards_by_rarity and cards_by_rarity[rarity]:
-            available_rarities.append(rarity)
-            weights.append(chance)
-
-    if not available_rarities:
+            available.append(rarity)
+            weights.append(w)
+    if not available:
         return random.choice(cards)
 
-    total_weight = sum(weights)
-    normalized_weights = [w/total_weight for w in weights]
-    chosen_rarity = random.choices(available_rarities, weights=normalized_weights)[0]
+    total = sum(weights)
+    probs = [w/total for w in weights]
+    chosen_rarity = random.choices(available, weights=probs)[0]
     return random.choice(cards_by_rarity[chosen_rarity])
 
-def get_mini_case_card():
-    return get_case_card_by_chances(MINI_CASE_CHANCES)
+def get_case_result(case_config: dict) -> dict:
+    items = case_config["items"]
+    weights = [item["weight"] for item in items]
+    total = sum(weights)
+    probs = [w/total for w in weights]
+    chosen = random.choices(items, weights=probs)[0]
+    if chosen["type"] == "card":
+        cards = load_cards()
+        cards_of_rarity = [c for c in cards if c["rarity"] == chosen["rarity"]]
+        if not cards_of_rarity:
+            return None
+        return {"type": "card", "card": random.choice(cards_of_rarity)}
+    else:
+        return {"type": "points", "amount": chosen["amount"]}
 
-def get_secret_case_card():
-    return get_case_card_by_chances(SECRET_CASE_CHANCES)
+def open_epic_case():
+    return get_case_result(EPIC_CASE)
 
-def get_mega_case_card():
-    return get_case_card_by_chances(MEGA_CASE_CHANCES)
+def open_mythic_case():
+    return get_case_result(MYTHIC_CASE)
 
-def get_case_card_by_chances(chances_dict):
-    cards = load_cards()
-    if not cards:
-        return None
-
-    cards_by_rarity = {}
-    for card in cards:
-        rarity = card["rarity"]
-        if rarity not in cards_by_rarity:
-            cards_by_rarity[rarity] = []
-        cards_by_rarity[rarity].append(card)
-
-    available_rarities = []
-    weights = []
-    for rarity, chance in chances_dict.items():
-        if rarity in cards_by_rarity and cards_by_rarity[rarity]:
-            available_rarities.append(rarity)
-            weights.append(chance)
-
-    if not available_rarities:
-        return random.choice(cards)
-
-    total_weight = sum(weights)
-    normalized_weights = [w/total_weight for w in weights]
-    chosen_rarity = random.choices(available_rarities, weights=normalized_weights)[0]
-    return random.choice(cards_by_rarity[chosen_rarity])
+def open_legendary_case():
+    return get_case_result(LEGENDARY_CASE)
 
 def get_card_by_id(card_id):
     cards = load_cards()
