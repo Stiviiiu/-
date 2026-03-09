@@ -1,6 +1,6 @@
 import os
 
-TOKEN = os.environ.get("BOT_TOKEN", "8608911191:AAHRgzz6SJRZ8YLYgn_LBmed8aGwcb9hc5A")
+TOKEN = os.environ.get("BOT_TOKEN", "8608911191:AAFrPUCctv3Tc4z3RSVim4XsoiQGX4KvQ8U")
 ADMIN_IDS = [6458164021, 6393025468]
 
 # Подключение к PostgreSQL (Supabase)
